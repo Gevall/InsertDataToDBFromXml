@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.SqlClient;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -30,31 +31,9 @@ namespace InsertDataToDBFromXml.Classes
 
             foreach (var order in orders.orders)
             {
-                _connection.Open();
-                await checkingExisitingGoods(order.product);
-                var prdouctFromDB = await GetDataFromDb();
-                var id = await chekUserExists(order.user);
-                var productQuary = await GetQuaryToProducts(order.product);
-                if (id != 0)
-                {
-
-                    var quary = "BEGIN TRANSACTION;" +
-                        "\ninsert into Orders (client_id, [no], reg_date, [sum])" +
-                        $"\nvalues ({id}, {order.no}, '{order.reg_date}', {order.sum});" +
-                        "\nDeclare @last_order_id INT;" +
-                        "\nSet @last_order_id = SCOPE_IDENTITY();" +
-                        "\nInsert into BasketList (order_id, goods_id, goods_count)" +
-                        $"\nValues {productQuary}" +
-                        "\nSelect b.goods_id, b.order_id, b.goods_count" +
-                        "\nFrom BasketList b" +
-                        "\nInner Join Goods g on g.id = b.goods_id" +
-                        "\nInner Join Orders o on o.id = b.order_id;" +
-                        "\nCOMMIT;";
-                    Console.WriteLine(quary);
-                    command.CommandText = quary;
-                    await command.ExecuteNonQueryAsync();
-                }
-                _connection.Close();
+                //_connection.Open();
+                InsertDataToDb(order, command);
+                //_connection.Close();
             }
         }
 
@@ -85,10 +64,13 @@ namespace InsertDataToDBFromXml.Classes
         /// <returns>Возвращает id пользователя</returns>
         async Task<int> chekUserExists(User user)
         {
+            SqlCommand command = new SqlCommand();
+            command.Connection = _connection;
             int id = 0;
-            var quary = $"Select id from Users where client_address = N'{user.email}';";
+            var quary = $"Select id from Users where client_address = N'@user_email';";
+            command.CommandText = quary;
+            command.Parameters.AddWithValue("@user_email", user.email);
             //Console.WriteLine("QUARY - " + quary);
-            SqlCommand command = new SqlCommand(quary, _connection);
             var response = command.ExecuteReader();
             if (response.HasRows)
             {
@@ -120,6 +102,8 @@ namespace InsertDataToDBFromXml.Classes
         async Task checkingExisitingGoods(List<Product> products)
         {
             List<Product> dbListProduct = await GetDataFromDb();
+            SqlCommand command = new SqlCommand();
+            command.Connection = _connection;
             string quary = "";
 
             foreach (var item in products)
@@ -127,13 +111,15 @@ namespace InsertDataToDBFromXml.Classes
                 if (dbListProduct.Exists(x => x.name == item.name)) { continue; }
                 else
                 {
-                    quary += $"Insert into Goods (goods_name, goods_price) Values (N'{item.name}', {item.price});\n";
+                    quary = $"sp_executesql Insert into Goods (goods_name, goods_price) Values (N'@item_name', @item_price);";
+                    command.Parameters.AddWithValue("@item_name", item.name);
+                    command.Parameters.AddWithValue("@item_price", item.price);
+                    command.CommandText += quary;
                 }
             }
 
             if (!quary.IsNullOrEmpty())
             {
-                SqlCommand command = new SqlCommand(quary, _connection);
                 //Console.WriteLine("Quary:\n" + quary);
                 await command.ExecuteNonQueryAsync();
             }
@@ -167,10 +153,14 @@ namespace InsertDataToDBFromXml.Classes
         /// <param name="user">Данные пользователя</param>
         private void addNewUser(User user)
         {
-            var quary = "Insert into Users (client_name, client_address) " +
-                        $"Values (N'{user.fio}', N'{user.email}');";
+            SqlCommand command = new SqlCommand();
+            var quary = "sp_executesql Insert into Users (client_name, client_address) " +
+                        $"Values (N'@user_fio', N'@user_email');";
+            command.Connection = _connection;
+            command.CommandText = quary;
+            command.Parameters.AddWithValue("@user_fio", user.fio);
+            command.Parameters.AddWithValue("@user_email", user.email);
             //Console.WriteLine("Добавление пользователя: " + quary);
-            SqlCommand command = new SqlCommand(quary , _connection);
             command.ExecuteNonQuery();
         }
         
@@ -187,8 +177,9 @@ namespace InsertDataToDBFromXml.Classes
             var quary = "";
             foreach (var product in products)
             {
-                quary = $"Select id, goods_name from Goods Where goods_name = N'{product.name}'";
+                quary = $"Select id, goods_name from Goods Where goods_name = N'@product_name'";
                 command.CommandText = quary;
+                command.Parameters.AddWithValue("@product_name", product.name);
                 var response = await command.ExecuteReaderAsync();
                 response.Read();
                 productsListWithIds.Add(new Product
@@ -206,6 +197,93 @@ namespace InsertDataToDBFromXml.Classes
             quary = quary.TrimEnd(',');
             //Console.WriteLine(">>>>>> " + quary);
             return quary;
+        }
+
+        async void IInsertData.InsertDataWithCheckOrderExists(Orders orders)
+        {
+            SqlCommand command = new SqlCommand();
+            command.Connection = _connection;
+            string quary;
+            foreach (var order in orders.orders)
+            {
+                quary = "Select [no] from Goods where [no] = @number_of_order";
+                command.Parameters.AddWithValue("@number_of_order", order.no);
+                var response = await command.ExecuteReaderAsync();
+                if (response.HasRows)
+                {
+                    response.Read();
+                    Order findOrder = new Order
+                    {
+                        no = (int)response["id"],
+                        product = (List<Product>)response["Goods"],
+                        reg_date = (string)response["reg_date"],
+                        sum = (string)response["sum"],
+                        user = (User)response["user"]
+                    };
+                    // добавить метод сравнения заказа и обновления в случае различия данных
+                    //Так же добавить отдельный метод получения данных из БД по заказу
+                }
+                else
+                {
+                    InsertDataToDb(order, command);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Вставка данных заказа в БД
+        /// </summary>
+        /// <param name="order"></param>
+        /// <param name="command"></param>
+        private async void InsertDataToDb(Order order, SqlCommand command)
+        {
+            _connection.Open();
+            await checkingExisitingGoods(order.product);
+            var prdouctFromDB = await GetDataFromDb();
+            var id = await chekUserExists(order.user);
+            var productQuary = await GetQuaryToProducts(order.product);
+            if (id != 0)
+            {
+
+                var quary = "BEGIN TRANSACTION;" +
+                    "\ninsert into Orders (client_id, [no], reg_date, [sum])" +
+                    $"\nvalues (@id, @order_no, '@order_reg_date', @summ);" +
+                    "\nDeclare @last_order_id INT;" +
+                    "\nSet @last_order_id = SCOPE_IDENTITY();" +
+                    "\nInsert into BasketList (order_id, goods_id, goods_count)" +
+                    $"\nValues @orduct_quary" +
+                    "\nSelect b.goods_id, b.order_id, b.goods_count" +
+                    "\nFrom BasketList b" +
+                    "\nInner Join Goods g on g.id = b.goods_id" +
+                    "\nInner Join Orders o on o.id = b.order_id;" +
+                    "\nCOMMIT;";
+                Console.WriteLine(quary);
+                command.CommandText = quary;
+                command.Parameters.AddWithValue("@id", id);
+                command.Parameters.AddWithValue("@order_no", order.no);
+                command.Parameters.AddWithValue("@order_reg_date", order.reg_date);
+                command.Parameters.AddWithValue("@summ", order.sum);
+                command.Parameters.AddWithValue("@orduct_quary", productQuary);
+                await command.ExecuteNonQueryAsync();
+                _connection.Close();
+            }
+        }
+
+        /// <summary>
+        /// Метод сравнения заказов
+        /// </summary>
+        /// <param name="order"></param>
+        /// <param name="esistOrder"></param>
+        /// <returns>Возвращает true если заказы одинаковые и false если разные</returns>
+        private bool CheckSameOrder(Order order, Order esistOrder)
+        {
+            // Добавить реализацию
+            return false;
+        }
+
+        private async void UpdateDataInDb(Order order, SqlCommand command, int numberOfOrder)
+        {
+            // Добавить реализацию обновления данных в бд
         }
     }
 }

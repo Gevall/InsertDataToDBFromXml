@@ -14,5 +14,11 @@ namespace InsertDataToDBFromXml.Interfaces
         /// </summary>
         /// <param name="orders"></param>
         public void InsertData(Orders orders);
+
+        /// <summary>
+        /// Запрос на вставку данных с проверкой созданного заказа
+        /// </summary>
+        /// <param name="orders"></param>
+        public void InsertDataWithCheckOrderExists(Orders orders);
     }
 }
