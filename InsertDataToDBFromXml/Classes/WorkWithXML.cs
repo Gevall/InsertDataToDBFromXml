@@ -11,14 +11,11 @@ namespace InsertDataToDBFromXml.Classes
 {
     internal class WorkWithXML : IWorkWithXml
     {
-        public void DeleteFiles(string[] files)
+        public void DeleteFiles(string file)
         {
             try
             {
-                foreach (string file in files)
-                {
-                    File.Delete(file);
-                }
+                File.Delete(file);
             }
             catch(Exception ex) { Console.WriteLine("Ошибка при удалении: " + ex.Message); }
         }
@@ -69,5 +66,6 @@ namespace InsertDataToDBFromXml.Classes
             }
             return null;
         }
+
     }
 }

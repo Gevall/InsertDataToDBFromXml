@@ -2,6 +2,7 @@
 using InsertDataToDBFromXml.Interfaces;
 using InsertDataToDBFromXml.Model;
 using System.Data.Common;
+using System.Net.Http.Headers;
 using System.Text.Unicode;
 using System.Xml;
 using System.Xml.Serialization;
@@ -10,6 +11,8 @@ namespace InsertDataToDBFromXml
 {
     internal class Program
     {
+        static List<CheckReadFiles> fileToRead = new List<CheckReadFiles>();
+
         static void Main(string[] args)
         {
             bool start = true;
@@ -25,19 +28,10 @@ namespace InsertDataToDBFromXml
                         startProgram(); //Запуск программы
                         break;
                     case ConsoleKey.D2:
-                        CreateXMLDoc(); // СОздание тестового xml
+                        CreateXMLDoc(); // Создание тестового xml
                         break;
                     case ConsoleKey.D0: // Выход
                         start = false; 
-                        break;
-                    case ConsoleKey.T:
-                        Console.WriteLine("Запуск теста...");
-                        IInsertData sqlData = new InsertData();
-                        Orders orders = new Orders { orders = new List<Order>()};
-                        orders.orders.Add(new Order());
-                        orders.orders.Add(new Order());
-                        orders.orders.Add(new Order());
-                        sqlData.InsertDataWithCheckOrderExists(orders);
                         break;
                 }
             }
@@ -45,19 +39,25 @@ namespace InsertDataToDBFromXml
 
         private static void startProgram()
         {
-            IWorkWithXml worker = new WorkWithXML();
+            IWorkWithXmlWithCheck worker = new WorkWithXmlWithCheck(fileToRead);
             IInsertData sqlData = new InsertData();
 
-            var files = worker.FilesInFolder();
+
+            var files = worker.ReadFileInFolder();
             if (files != null)
             {
                 foreach (var file in files)
                 {
-                    var data = worker.GetDataFromFile(file);
-                    sqlData.InsertData(data);
+                    var data = worker.GetDataFromFile(file.path);
+                    if (!file.read)
+                    {
+                        file.read = true;  // После прочтения файл помечается как прочитанный
+                        sqlData.InsertDataWithCheckOrderExists(data); // Метод изменен на проверяющий уже созданные заказы в БД
+                        Console.WriteLine("\nДанные успешно внесены!");
+                    }
+                    else Console.WriteLine("Файл уже был добавлен ранее");
+                    worker.DeleteFiles(file.path); // Прочитанный файл удаляется из дирректории
                 }
-                worker.DeleteFiles(files);
-                Console.WriteLine("\nДанные успешно внесены!");
             }
         }
 

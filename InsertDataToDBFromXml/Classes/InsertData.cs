@@ -199,6 +199,10 @@ namespace InsertDataToDBFromXml.Classes
             return quary;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="orders"></param>
         async void IInsertData.InsertDataWithCheckOrderExists(Orders orders)
         {
             _connection.Open();
@@ -207,17 +211,21 @@ namespace InsertDataToDBFromXml.Classes
             string quary;
             foreach (var order in orders.orders)
             {
-                Console.WriteLine("Введите номер заказа");
-                var testNumber = int.Parse(Console.ReadLine());
-                quary = "Select o.[no], o.reg_date, o.[sum], u.client_name, u.client_address from Orders o " +
+                //Console.WriteLine("Введите номер заказа");
+                //var testNumber = int.Parse(Console.ReadLine());
+                quary = "Select o.id, u.client_address from Orders o " +
                     "Left Join Users u on o.client_id = u.id " +
                     "where [no] = @number_of_order";
-                command.Parameters.AddWithValue("@number_of_order", testNumber);
+                command.Parameters.AddWithValue("@number_of_order", order.no);
                 command.CommandText= quary;
                 var response = await command.ExecuteReaderAsync();
                 if (response.HasRows)
                 {
                     var cheker = await CheckSameOrder(order, response);
+                    if (cheker == false)
+                    {
+                         UpdateDataOfOrder(order.product, (int)response["id"]);
+                    }
                 }
                 else
                 {
@@ -275,20 +283,92 @@ namespace InsertDataToDBFromXml.Classes
         private async Task<bool> CheckSameOrder(Order order, SqlDataReader orderFromDb)
         {
             orderFromDb.Read();
-            var number = (int)orderFromDb["no"];
-            var reg_date = orderFromDb["reg_date"];
-            var summ = orderFromDb["sum"].ToString();
-            //var product = (List<Product>)orderFromDb["Goods"];   // Вынести получение данных в отдельный запрос
-            var userName = orderFromDb["client_name"].ToString();
+            var orderId = (int)orderFromDb["id"];
             var userAddress = orderFromDb["client_address"].ToString();
-            Console.WriteLine("Все гут!" +
-                $"email = {userName}");
-            return false;
+            orderFromDb.Close();
+            var product = await GetProductListFromConcreteOrder(orderId);
+            if (order.user.email == userAddress)
+            {
+                List<Product> updateProductList = new List<Product>();
+                for (int i = 0; i < product.Count; i++)
+                {
+                    if (product[i].name != order.product[i].name ||
+                        product[i].price != order.product[i].price ||
+                        product[i].quantity != order.product[i].quantity)
+                    {
+                        return false;
+                    }
+                }
+            }
+            else
+            {
+                Console.WriteLine("Ошибка! Одинаковый номер заказа для разных пользователей.");
+            }
+            return true;
         }
 
-        private async void UpdateDataInDb(Order order, SqlCommand command, int numberOfOrder)
+        /// <summary>
+        /// Получение списка продуктов по id заказа
+        /// </summary>
+        /// <param name="orderId"></param>
+        /// <returns></returns>
+        private async Task<List<Product>> GetProductListFromConcreteOrder(int orderId)
         {
-            // Добавить реализацию обновления данных в бд
+            List<Product> products = new List<Product>();
+            SqlCommand command = new SqlCommand();
+            command.Connection = _connection;
+            var quary = "Select g.goods_name, g.goods_price, b.goods_count From BasketList b" +
+                "\r\nJoin Goods g on b.goods_id = g.id" +
+                "\r\nwhere b.order_id = @orderId";
+            command.Parameters.AddWithValue("@orderId", orderId);
+            command.CommandText = quary;
+            var response = await command.ExecuteReaderAsync();
+            if (response.HasRows)
+            {
+                while (response.Read())
+                {
+                    products.Add(new Product
+                    {
+                        quantity = (int)response["goods_count"],
+                        name = response.GetString("goods_name"),
+                        price = response["goods_price"].ToString()
+                    });
+                }
+                response.Close();
+                return products;
+            }
+            response.Close();
+            return null;
         }
+
+        /// <summary>
+        /// Обновление данных в таблице заказов и таблице продуктов
+        /// </summary>
+        /// <param name="product"></param>
+        /// <param name="oderId"></param>
+        private async void UpdateDataOfOrder(List<Product> product, int oderId)
+        {
+            SqlCommand command = new SqlCommand();
+            command.Connection = _connection;
+            var quary = "Begin transaction;";
+            foreach (var item in product)
+            {
+                quary += "\nUpdate BasketList" +
+                         "\nSet goods_count = @goodsCount" +
+                         "\nWhere (order_id = @orderId) and (goods_id = @goodsId);" +
+                         "\nUpdate Goods" +
+                         "\nSet goods_price = @goodsPrice, goods_name = N'@goodsName'" +
+                         "\nWhere id = @goodsId;";
+                command.Parameters.AddWithValue("@goodsCount", item.quantity);
+                command.Parameters.AddWithValue("@orderId", oderId);
+                command.Parameters.AddWithValue("@goodsId", item.id);
+                command.Parameters.AddWithValue("@goodsPrice", item.price);
+                command.Parameters.AddWithValue("@goodsName", item.name);
+            }
+            quary += "\nCommit;";
+            command.CommandText = quary;
+            await command.ExecuteNonQueryAsync();
+        }
+
     }
 }

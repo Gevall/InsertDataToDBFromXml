@@ -26,6 +26,6 @@ namespace InsertDataToDBFromXml.Interfaces
         /// Удаление прочитанных файлов
         /// </summary>
         /// <param name="files"></param>
-        public void DeleteFiles(string[] files);
+        public void DeleteFiles(string file);
     }
 }
