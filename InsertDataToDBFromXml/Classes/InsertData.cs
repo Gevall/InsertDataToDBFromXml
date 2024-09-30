@@ -201,33 +201,30 @@ namespace InsertDataToDBFromXml.Classes
 
         async void IInsertData.InsertDataWithCheckOrderExists(Orders orders)
         {
+            _connection.Open();
             SqlCommand command = new SqlCommand();
             command.Connection = _connection;
             string quary;
             foreach (var order in orders.orders)
             {
-                quary = "Select [no] from Goods where [no] = @number_of_order";
-                command.Parameters.AddWithValue("@number_of_order", order.no);
+                Console.WriteLine("Введите номер заказа");
+                var testNumber = int.Parse(Console.ReadLine());
+                quary = "Select o.[no], o.reg_date, o.[sum], u.client_name, u.client_address from Orders o " +
+                    "Left Join Users u on o.client_id = u.id " +
+                    "where [no] = @number_of_order";
+                command.Parameters.AddWithValue("@number_of_order", testNumber);
+                command.CommandText= quary;
                 var response = await command.ExecuteReaderAsync();
                 if (response.HasRows)
                 {
-                    response.Read();
-                    Order findOrder = new Order
-                    {
-                        no = (int)response["id"],
-                        product = (List<Product>)response["Goods"],
-                        reg_date = (string)response["reg_date"],
-                        sum = (string)response["sum"],
-                        user = (User)response["user"]
-                    };
-                    // добавить метод сравнения заказа и обновления в случае различия данных
-                    //Так же добавить отдельный метод получения данных из БД по заказу
+                    var cheker = await CheckSameOrder(order, response);
                 }
                 else
                 {
                     InsertDataToDb(order, command);
                 }
             }
+            _connection.Close();
         }
 
         /// <summary>
@@ -275,9 +272,17 @@ namespace InsertDataToDBFromXml.Classes
         /// <param name="order"></param>
         /// <param name="esistOrder"></param>
         /// <returns>Возвращает true если заказы одинаковые и false если разные</returns>
-        private bool CheckSameOrder(Order order, Order esistOrder)
+        private async Task<bool> CheckSameOrder(Order order, SqlDataReader orderFromDb)
         {
-            // Добавить реализацию
+            orderFromDb.Read();
+            var number = (int)orderFromDb["no"];
+            var reg_date = orderFromDb["reg_date"];
+            var summ = orderFromDb["sum"].ToString();
+            //var product = (List<Product>)orderFromDb["Goods"];   // Вынести получение данных в отдельный запрос
+            var userName = orderFromDb["client_name"].ToString();
+            var userAddress = orderFromDb["client_address"].ToString();
+            Console.WriteLine("Все гут!" +
+                $"email = {userName}");
             return false;
         }
 

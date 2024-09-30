@@ -30,6 +30,15 @@ namespace InsertDataToDBFromXml
                     case ConsoleKey.D0: // Выход
                         start = false; 
                         break;
+                    case ConsoleKey.T:
+                        Console.WriteLine("Запуск теста...");
+                        IInsertData sqlData = new InsertData();
+                        Orders orders = new Orders { orders = new List<Order>()};
+                        orders.orders.Add(new Order());
+                        orders.orders.Add(new Order());
+                        orders.orders.Add(new Order());
+                        sqlData.InsertDataWithCheckOrderExists(orders);
+                        break;
                 }
             }
         }
